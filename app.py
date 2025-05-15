@@ -14,7 +14,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Load and split PDF
-loader = PyPDFLoader("pdfs/MKRCP.pdf")
+loader = PyPDFLoader("MKRCP.pdf")
 docs = loader.load()
 
 splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
