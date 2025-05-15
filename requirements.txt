@@ -4,3 +4,4 @@ langchain
 chromadb
 huggingface_hub
 PyPDF2
+langchain-community
