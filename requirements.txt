@@ -1,0 +1,6 @@
+Flask
+python-dotenv
+langchain
+chromadb
+huggingface_hub
+PyPDF2
