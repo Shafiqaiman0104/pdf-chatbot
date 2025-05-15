@@ -9,23 +9,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-
 app = Flask(__name__)
-
-# Ensure PDF exists
-if not os.path.exists("MKRCP.pdf"):
-    raise FileNotFoundError("The file MKRCP.pdf was not found. Make sure it's uploaded to your repo.")
-
-# Load and split PDF
-loader = PyPDFLoader("MKRCP.pdf")
-docs = loader.load()
-
-splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-chunks = splitter.split_documents(docs)
-
-# Create vector store
-embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-vectorstore = Chroma.from_documents(chunks, embedding)
 
 # Setup LLM (DeepSeek via OpenRouter)
 llm = ChatOpenAI(
@@ -34,14 +18,32 @@ llm = ChatOpenAI(
     model_name="deepseek/deepseek-chat-v3-0324:free",
 )
 
-qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever())
+# Cache the QA chain so we don’t reload every time
+qa_chain = None
+
+def get_qa_chain():
+    global qa_chain
+    if qa_chain is None:
+        loader = PyPDFLoader("MKRCP.pdf")
+        docs = loader.load()
+
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        chunks = splitter.split_documents(docs)
+
+        embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        vectorstore = Chroma.from_documents(chunks, embedding)
+
+        qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever())
+    return qa_chain
 
 @app.route("/ask", methods=["POST"])
 def ask():
     data = request.json
     question = data.get("question", "")
-    answer = qa_chain.run(question)
+    qa = get_qa_chain()
+    answer = qa.run(question)
     return jsonify({"answer": answer})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
