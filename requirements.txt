@@ -3,5 +3,5 @@ python-dotenv
 langchain
 chromadb
 huggingface_hub
-PyPDF2
+pypdf
 langchain-community
