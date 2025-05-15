@@ -1,11 +1,11 @@
 # app.py
 from flask import Flask, request, jsonify
-from langchain.vectorstores import Chroma
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOpenAI
+from langchain_community.vectorstores import Chroma
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain_community.chat_models import ChatOpenAI
 import os
 from dotenv import load_dotenv
 
