@@ -1,69 +1,74 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS  # Lighter than Chroma
+from langchain.text_splitter import CharacterTextSplitter
 from langchain.chains import RetrievalQA
-from langchain_community.chat_models import ChatOpenAI
+from langchain_community.llms import OpenAIChat
 import os
+import time
 
 app = Flask(__name__)
 CORS(app)
 
-# Initialize components
+# Lightweight model configuration
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+LLM_MODEL = "deepseek/deepseek-chat-v3-0324:free"
+PDF_PATH = "MKRCP.pdf"
+
+# Initialize with lazy loading
 vector_store = None
 qa_chain = None
+last_init_time = 0
 
 def initialize_components():
-    global vector_store, qa_chain
-    if vector_store is None:
-        try:
-            print("[INFO] Initializing components...")
-            
-            # Initialize LLM
-            llm = ChatOpenAI(
-                openai_api_base="https://openrouter.ai/api/v1",
-                openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-                model_name="deepseek/deepseek-chat-v3-0324:free",
-                temperature=0.1
-            )
-
-            # Load and process PDF
-            loader = PyPDFLoader("MKRCP.pdf")
-            documents = loader.load()
-            
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=100
-            )
-            chunks = text_splitter.split_documents(documents)
-            
-            # Create vector store
-            embeddings = HuggingFaceEmbeddings(
-                model_name="sentence-transformers/all-MiniLM-L6-v2"
-            )
-            
-            vector_store = Chroma.from_documents(
-                documents=chunks,
-                embedding=embeddings
-            )
-            
-            # Create QA chain
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                chain_type="stuff",
-                retriever=vector_store.as_retriever()
-            )
-            
-            print("[INFO] Components initialized successfully")
-        except Exception as e:
-            print(f"[ERROR] Initialization failed: {str(e)}")
-            raise
-
-@app.route("/")
-def home():
-    return "✅ PDF Chatbot API is running"
+    global vector_store, qa_chain, last_init_time
+    
+    # Skip re-initialization if done recently
+    if vector_store and (time.time() - last_init_time < 300):
+        return
+    
+    try:
+        print("[INIT] Loading lightweight components...")
+        
+        # 1. Use smaller text splitter
+        text_splitter = CharacterTextSplitter(
+            chunk_size=500,  # Reduced from 1000
+            chunk_overlap=50
+        )
+        
+        # 2. Process PDF in memory-efficient way
+        with open(PDF_PATH, "rb") as f:
+            from PyPDF2 import PdfReader
+            pdf = PdfReader(f)
+            text = "\n".join([page.extract_text() for page in pdf.pages])
+            chunks = text_splitter.split_text(text)
+        
+        # 3. Use FAISS instead of Chroma
+        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        vector_store = FAISS.from_texts(chunks, embeddings)
+        
+        # 4. Initialize LLM
+        llm = OpenAIChat(
+            openai_api_base="https://openrouter.ai/api/v1",
+            openai_api_key=os.getenv("OPENROUTER_API_KEY"),
+            model_name=LLM_MODEL,
+            temperature=0.1,
+            max_tokens=200  # Limit response length
+        )
+        
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vector_store.as_retriever(search_kwargs={"k": 2})  # Fewer chunks
+        )
+        
+        last_init_time = time.time()
+        print("[INIT] Components ready")
+        
+    except Exception as e:
+        print(f"[ERROR] Initialization failed: {str(e)}")
+        raise
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -72,19 +77,22 @@ def ask():
         question = data.get("question", "").strip()
         
         if not question:
-            return jsonify({"error": "Question cannot be empty"}), 400
-
-        if qa_chain is None:
-            initialize_components()
+            return jsonify({"error": "Empty question"}), 400
             
+        initialize_components()  # Lazy loading
+        
         result = qa_chain({"query": question})
-        return jsonify({"answer": result["result"]})
-
+        return jsonify({
+            "answer": result.get("result", "No answer found"),
+            "status": "success"
+        })
+        
     except Exception as e:
-        print(f"[ERROR] API error: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({
+            "error": "Service unavailable",
+            "details": str(e)[:100]  # Truncate long errors
+        }), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
-    initialize_components()  # Pre-initialize on startup
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, threaded=True)
