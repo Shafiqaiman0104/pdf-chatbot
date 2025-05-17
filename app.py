@@ -3,13 +3,12 @@ from flask_cors import CORS
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter  # Changed import
 from langchain.chains import RetrievalQA
 from langchain_community.chat_models import ChatOpenAI
 import os
-from dotenv import load_dotenv
+from typing import Dict, Any
 
-load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
@@ -21,65 +20,67 @@ llm = ChatOpenAI(
     temperature=0.1
 )
 
-# Cache QA chain
+# Cache components
+vector_store = None
 qa_chain = None
 
-def get_qa_chain():
-    global qa_chain
-    if qa_chain is None:
+def initialize_components():
+    global vector_store, qa_chain
+    if vector_store is None:
         try:
-            print("[INFO] Loading and splitting PDF...")
+            print("[INFO] Loading and processing PDF...")
             loader = PyPDFLoader("MKRCP.pdf")
-            docs = loader.load()
-
-            splitter = RecursiveCharacterTextSplitter(
+            documents = loader.load()
+            
+            text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1000,
                 chunk_overlap=100
             )
-            chunks = splitter.split_documents(docs)
-
-            embedding = HuggingFaceEmbeddings(
+            chunks = text_splitter.split_documents(documents)
+            
+            embeddings = HuggingFaceEmbeddings(
                 model_name="sentence-transformers/all-MiniLM-L6-v2"
             )
             
-            # Simplified Chroma initialization
-            vectorstore = Chroma.from_documents(
+            vector_store = Chroma.from_documents(
                 documents=chunks,
-                embedding=embedding
+                embedding=embeddings
             )
-
+            
             qa_chain = RetrievalQA.from_chain_type(
                 llm=llm,
                 chain_type="stuff",
-                retriever=vectorstore.as_retriever()
+                retriever=vector_store.as_retriever()
             )
-            print("[INFO] QA chain initialized successfully.")
+            print("[INFO] Components initialized successfully")
         except Exception as e:
-            print("[ERROR] QA chain initialization failed:", str(e))
+            print(f"[ERROR] Initialization failed: {str(e)}")
             raise
-    return qa_chain
 
 @app.route("/")
-def home():
-    return "✅ PDF Chatbot API is running."
+def home() -> str:
+    return "✅ PDF Chatbot API is running"
 
 @app.route("/ask", methods=["POST"])
-def ask():
+def ask() -> Dict[str, Any]:
     try:
         data = request.get_json()
         question = data.get("question", "").strip()
         
         if not question:
-            return jsonify({"error": "Question cannot be empty"}), 400
+            return {"error": "Question cannot be empty"}, 400
 
-        qa = get_qa_chain()
-        result = qa({"query": question})
-        return jsonify({"answer": result["result"]})
+        if qa_chain is None:
+            initialize_components()
+            
+        result = qa_chain({"query": question})
+        return {"answer": result["result"]}
 
     except Exception as e:
-        print("[ERROR] API error:", str(e))
-        return jsonify({"error": "Internal server error"}), 500
+        print(f"[ERROR] API error: {str(e)}")
+        return {"error": "Internal server error"}, 500
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.getenv("PORT", 5000))
+    initialize_components()  # Pre-initialize on startup
     app.run(host="0.0.0.0", port=port, debug=False)
