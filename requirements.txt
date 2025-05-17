@@ -11,3 +11,4 @@ flask-cors==3.0.10
 gunicorn==21.2.0
 pypika==0.48.9
 typing-extensions==4.9.0
+pypdf>=3.0.0
