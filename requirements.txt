@@ -8,3 +8,5 @@ huggingface-hub
 sentence-transformers
 PyPDF2
 openai
+flask-cors
+gunicorn
