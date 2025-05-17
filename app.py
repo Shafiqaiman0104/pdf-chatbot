@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
-from langchain_community.vectorstores import Chroma
+from flask_cors import CORS
+from langchain_community.vectorstore import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -10,6 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__)
+CORS(app)  # Enable CORS
 
 # Setup LLM (DeepSeek via OpenRouter)
 llm = ChatOpenAI(
@@ -26,7 +28,7 @@ def get_qa_chain():
     if qa_chain is None:
         try:
             print("[INFO] Loading and splitting PDF...")
-            loader = PyPDFLoader("MKRCP.pdf")  # Ensure this file is in the same folder!
+            loader = PyPDFLoader("MKRCP.pdf")
             docs = loader.load()
 
             splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
@@ -50,7 +52,7 @@ def home():
 def ask():
     try:
         print("[INFO] Received /ask request")
-        data = request.get_json(force=True)
+        data = request.get_json()
         question = data.get("question", "").strip()
         print(f"[INFO] Question: {question}")
 
