@@ -1,10 +1,10 @@
 Flask
 python-dotenv
 langchain
-chromadb
-huggingface_hub
 langchain-community
 langchain-text-splitters
+chromadb
+huggingface-hub
 sentence-transformers
-pypdf
+PyPDF2
 openai
