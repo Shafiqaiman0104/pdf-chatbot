@@ -24,6 +24,7 @@ qa_chain = None
 def get_qa_chain():
     global qa_chain
     if qa_chain is None:
+        print("[INFO] Loading and splitting PDF...")
         loader = PyPDFLoader("MKRCP.pdf")
         docs = loader.load()
 
@@ -34,15 +35,34 @@ def get_qa_chain():
         vectorstore = Chroma.from_documents(chunks, embedding)
 
         qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever())
+        print("[INFO] QA chain ready.")
     return qa_chain
 
+# Health check route
+@app.route("/")
+def home():
+    return "✅ PDF Chatbot is running."
+
+# PDF Q&A route
 @app.route("/ask", methods=["POST"])
 def ask():
-    data = request.json
-    question = data.get("question", "")
-    qa = get_qa_chain()
-    answer = qa.run(question)
-    return jsonify({"answer": answer})
+    try:
+        print("[INFO] Received /ask request")
+        data = request.get_json()
+        question = data.get("question", "")
+        print(f"[INFO] Question: {question}")
+
+        if not question:
+            return jsonify({"error": "Question is required"}), 400
+
+        qa = get_qa_chain()
+        answer = qa.run(question)
+        print(f"[INFO] Answer: {answer}")
+        return jsonify({"answer": answer})
+
+    except Exception as e:
+        print("[ERROR]", str(e))
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
