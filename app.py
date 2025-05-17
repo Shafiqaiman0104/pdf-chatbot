@@ -1,10 +1,10 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from langchain_community.vectorstores import Chroma  # Changed import path
+from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.chains import RetrievalQA  # Updated import path
+from langchain.chains import RetrievalQA
 from langchain_community.chat_models import ChatOpenAI
 import os
 from dotenv import load_dotenv
@@ -18,7 +18,7 @@ llm = ChatOpenAI(
     openai_api_base="https://openrouter.ai/api/v1",
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
     model_name="deepseek/deepseek-chat-v3-0324:free",
-    temperature=0.1  # Added for more deterministic answers
+    temperature=0.1
 )
 
 # Cache QA chain
@@ -41,17 +41,17 @@ def get_qa_chain():
             embedding = HuggingFaceEmbeddings(
                 model_name="sentence-transformers/all-MiniLM-L6-v2"
             )
+            
+            # Simplified Chroma initialization
             vectorstore = Chroma.from_documents(
                 documents=chunks,
-                embedding=embedding,
-                persist_directory="./chroma_db"  # Persist to disk to avoid re-embedding
+                embedding=embedding
             )
 
             qa_chain = RetrievalQA.from_chain_type(
                 llm=llm,
                 chain_type="stuff",
-                retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
-                return_source_documents=False
+                retriever=vectorstore.as_retriever()
             )
             print("[INFO] QA chain initialized successfully.")
         except Exception as e:
@@ -73,8 +73,8 @@ def ask():
             return jsonify({"error": "Question cannot be empty"}), 400
 
         qa = get_qa_chain()
-        answer = qa.invoke({"query": question})  # Updated method for newer LangChain
-        return jsonify({"answer": answer["result"]})
+        result = qa({"query": question})
+        return jsonify({"answer": result["result"]})
 
     except Exception as e:
         print("[ERROR] API error:", str(e))
@@ -82,4 +82,4 @@ def ask():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)  # debug=False for production
+    app.run(host="0.0.0.0", port=port, debug=False)
