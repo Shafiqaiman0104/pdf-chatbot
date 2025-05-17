@@ -1,23 +1,24 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from langchain_community.vectorstore import Chroma
+from langchain_community.vectorstores import Chroma  # Changed import path
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain.chains import RetrievalQA  # Updated import path
 from langchain_community.chat_models import ChatOpenAI
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__)
-CORS(app)  # Enable CORS
+CORS(app)
 
-# Setup LLM (DeepSeek via OpenRouter)
+# Initialize LLM (DeepSeek via OpenRouter)
 llm = ChatOpenAI(
     openai_api_base="https://openrouter.ai/api/v1",
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
     model_name="deepseek/deepseek-chat-v3-0324:free",
+    temperature=0.1  # Added for more deterministic answers
 )
 
 # Cache QA chain
@@ -31,44 +32,54 @@ def get_qa_chain():
             loader = PyPDFLoader("MKRCP.pdf")
             docs = loader.load()
 
-            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=100
+            )
             chunks = splitter.split_documents(docs)
 
-            embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-            vectorstore = Chroma.from_documents(chunks, embedding)
+            embedding = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/all-MiniLM-L6-v2"
+            )
+            vectorstore = Chroma.from_documents(
+                documents=chunks,
+                embedding=embedding,
+                persist_directory="./chroma_db"  # Persist to disk to avoid re-embedding
+            )
 
-            qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever())
-            print("[INFO] QA chain is ready.")
+            qa_chain = RetrievalQA.from_chain_type(
+                llm=llm,
+                chain_type="stuff",
+                retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
+                return_source_documents=False
+            )
+            print("[INFO] QA chain initialized successfully.")
         except Exception as e:
-            print("[ERROR] Failed to initialize QA chain:", e)
+            print("[ERROR] QA chain initialization failed:", str(e))
             raise
     return qa_chain
 
 @app.route("/")
 def home():
-    return "✅ PDF Chatbot is running."
+    return "✅ PDF Chatbot API is running."
 
 @app.route("/ask", methods=["POST"])
 def ask():
     try:
-        print("[INFO] Received /ask request")
         data = request.get_json()
         question = data.get("question", "").strip()
-        print(f"[INFO] Question: {question}")
-
+        
         if not question:
-            return jsonify({"error": "No question provided"}), 400
+            return jsonify({"error": "Question cannot be empty"}), 400
 
         qa = get_qa_chain()
-        answer = qa.run(question)
-        print(f"[INFO] Answer: {answer}")
-        return jsonify({"answer": answer})
+        answer = qa.invoke({"query": question})  # Updated method for newer LangChain
+        return jsonify({"answer": answer["result"]})
 
     except Exception as e:
-        print("[ERROR] Internal server error:", e)
-        return jsonify({"error": str(e)}), 500
+        print("[ERROR] API error:", str(e))
+        return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"[INFO] Starting app on port {port}...")
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False)  # debug=False for production
